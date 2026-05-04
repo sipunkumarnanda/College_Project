@@ -8,7 +8,9 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Counter from "./Counter";
 import { useDispatch, useSelector } from "react-redux";
-import toast from "react-hot-toast"; // ✅ ADD
+import toast from "react-hot-toast";
+import Reviews from "./Reviews";
+
 
 const ProductDetails = ({ product }) => {
 
@@ -16,6 +18,10 @@ const ProductDetails = ({ product }) => {
 
   const productId = product._id;
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹';
+
+  // ✅ STOCK STATES
+  const isOutOfStock = (product?.stock ?? 0) <= 0;
+  const isLowStock = product?.stock > 0 && product?.stock <= 5;
 
   const dispatch = useDispatch();
   const router = useRouter();
@@ -33,17 +39,21 @@ const ProductDetails = ({ product }) => {
 
   const [quantity, setQuantity] = useState(1);
 
-  // ✅ Sync with cart
+  // ✅ Sync quantity with cart
   useEffect(() => {
     if (existingItem) {
       setQuantity(existingItem.quantity);
     }
   }, [existingItem]);
 
-  // 🔥 UPDATED HANDLER WITH TOAST
+  // 🔥 HANDLE ADD TO CART
   const handleCartClick = async () => {
 
-    // 🔐 LOGIN CHECK
+    if (isOutOfStock) {
+      toast.error("Product is out of stock");
+      return;
+    }
+
     if (!isLoggedIn) {
       toast.error("Please login to add items");
 
@@ -54,13 +64,11 @@ const ProductDetails = ({ product }) => {
       return;
     }
 
-    // ✅ already in cart
     if (existingItem) {
       router.push('/cart');
       return;
     }
 
-    // ✅ add to cart
     try {
       await dispatch(addToCart({
         productId,
@@ -73,6 +81,7 @@ const ProductDetails = ({ product }) => {
     }
   };
 
+  // ✅ IMAGES
   const images = product.images?.length
     ? product.images
     : [product.image || "/placeholder.png"];
@@ -81,6 +90,7 @@ const ProductDetails = ({ product }) => {
 
   const isInCart = !!existingItem;
 
+  // ✅ RATING
   const averageRating = product.rating?.length
     ? product.rating.reduce((acc, item) => acc + item.rating, 0) / product.rating.length
     : 0;
@@ -90,29 +100,48 @@ const ProductDetails = ({ product }) => {
 
       <div className="flex flex-col lg:flex-row gap-12">
 
-        {/* IMAGES */}
+        {/* ================= IMAGES ================= */}
         <div className="flex gap-4">
+
+          {/* THUMBNAILS */}
           <div className="flex flex-col gap-3">
             {images.map((img, index) => (
-              <div key={index} onClick={() => setMainImage(img)}>
-                <Image src={img} width={60} height={60} alt="thumb" />
+              <div
+                key={index}
+                onClick={() => setMainImage(img)}
+                className={`relative w-14 h-14 cursor-pointer border rounded-md overflow-hidden ${
+                  mainImage === img ? "border-green-600" : "border-gray-300"
+                }`}
+              >
+                <Image
+                  src={img}
+                  alt="thumb"
+                  fill
+                  className="object-cover"
+                />
               </div>
             ))}
           </div>
 
-          <Image
-            src={mainImage}
-            width={350}
-            height={350}
-            alt={product.name}
-          />
+          {/* MAIN IMAGE */}
+          <div className="relative w-[300px] sm:w-[350px] md:w-[400px] aspect-square bg-gray-100 rounded-xl overflow-hidden flex items-center justify-center">
+            <Image
+              src={mainImage}
+              alt={product.name}
+              fill
+              className="object-contain hover:scale-105 transition duration-300"
+            />
+          </div>
+
         </div>
 
-        {/* DETAILS */}
+        {/* ================= DETAILS ================= */}
         <div>
 
+          {/* NAME */}
           <h1 className="text-3xl font-semibold">{product.name}</h1>
 
+          {/* RATING */}
           <div className="flex mt-2">
             {Array(5).fill('').map((_, i) => (
               <StarIcon
@@ -122,10 +151,25 @@ const ProductDetails = ({ product }) => {
             ))}
           </div>
 
+          {/* PRICE */}
           <p className="text-2xl text-green-600 mt-3">
             {currency}{product.price}
           </p>
 
+          {/* STOCK STATUS */}
+          {isOutOfStock && (
+            <p className="text-red-500 text-sm mt-2">
+              Currently unavailable
+            </p>
+          )}
+
+          {!isOutOfStock && isLowStock && (
+            <p className="text-orange-500 text-sm mt-1">
+              Only {product.stock} left!
+            </p>
+          )}
+
+          {/* DESCRIPTION */}
           <p className="mt-4 text-gray-600">
             {product.description}
           </p>
@@ -134,17 +178,24 @@ const ProductDetails = ({ product }) => {
           <Counter
             quantity={quantity}
             setQuantity={setQuantity}
+            disabled={isOutOfStock}
           />
 
           {/* BUTTON */}
           <button
             onClick={handleCartClick}
-            disabled={loading}
-            className={`mt-6 px-6 py-3 rounded text-white ${
-              isInCart ? "bg-blue-500" : "bg-green-600"
+            disabled={isOutOfStock || loading}
+            className={`mt-6 px-6 py-3 rounded text-white transition ${
+              isOutOfStock
+                ? "bg-gray-400 cursor-not-allowed"
+                : isInCart
+                ? "bg-blue-500 hover:bg-blue-600"
+                : "bg-green-600 hover:bg-green-700"
             }`}
           >
-            {isInCart
+            {isOutOfStock
+              ? "Out of Stock"
+              : isInCart
               ? "Go to Cart"
               : loading
               ? "Adding..."
@@ -154,7 +205,7 @@ const ProductDetails = ({ product }) => {
         </div>
 
       </div>
-
+      <Reviews productId={product._id} />
     </div>
   );
 };

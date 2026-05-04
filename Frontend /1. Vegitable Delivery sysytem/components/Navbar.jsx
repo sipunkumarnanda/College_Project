@@ -1,4 +1,3 @@
-
 "use client";
 
 import { Search, ShoppingCart, Menu, X } from "lucide-react";
@@ -24,26 +23,30 @@ const Navbar = () => {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    router.push(`/shop?search=${search}`);
+
+    if (!search.trim()) return; // prevent empty search
+
+    router.push(`/shop?search=${encodeURIComponent(search)}`);
+    setSearch(""); // optional: clear input after search
   };
 
-const handleLogout = async () => {
-  try {
-    await api.post("/auth/logout");
+  const handleLogout = async () => {
+    try {
+      await api.post("/auth/logout");
 
-    toast.success("Logged out successfully"); // ✅ ADD
-  } catch (err) {
-    toast.error("Logout failed");
-  }
+      toast.success("Logged out successfully"); // ✅ ADD
+    } catch (err) {
+      toast.error("Logout failed");
+    }
 
-  dispatch(logoutUser());
+    dispatch(logoutUser());
 
-  router.push("/");
+    router.push("/");
 
-  setTimeout(() => {
-    router.refresh();
-  }, 100);
-};
+    setTimeout(() => {
+      router.refresh();
+    }, 100);
+  };
 
   // ✅ prevent flicker
   if (loading) return null;
@@ -52,9 +55,11 @@ const handleLogout = async () => {
     <nav className="relative bg-white">
       <div className="mx-6">
         <div className="flex items-center justify-between max-w-7xl mx-auto py-4">
-
           {/* LOGO */}
-          <Link href="/" className="relative text-4xl font-semibold text-slate-700">
+          <Link
+            href="/"
+            className="relative text-4xl font-semibold text-slate-700"
+          >
             <span className="text-green-600">Fresh</span>Kart
             <span className="text-green-600 text-5xl">.</span>
             <p className="absolute text-xs font-semibold -top-1 -right-8 px-3 py-0.5 rounded-full text-white bg-green-500">
@@ -64,7 +69,6 @@ const handleLogout = async () => {
 
           {/* DESKTOP MENU */}
           <div className="hidden sm:flex items-center gap-4 lg:gap-8 text-slate-600">
-
             <Link href="/">Home</Link>
             <Link href="/shop">Shop</Link>
             <Link href="/about">About</Link>
@@ -116,14 +120,11 @@ const handleLogout = async () => {
               </button>
             ) : (
               <div className="relative group cursor-pointer">
-
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center">
                     {user?.name?.charAt(0)?.toUpperCase() || "U"}
                   </div>
-                  <span className="capitalize">
-                    {user?.name || "User"}
-                  </span>
+                  <span className="capitalize">{user?.name || "User"}</span>
                 </div>
 
                 {/* DROPDOWN */}
@@ -142,15 +143,12 @@ const handleLogout = async () => {
                     Logout
                   </button>
                 </div>
-
               </div>
             )}
-
           </div>
 
           {/* MOBILE */}
           <div className="sm:hidden">
-
             {/* HAMBURGER */}
             <button onClick={() => setMenuOpen(true)}>
               <Menu size={28} />
@@ -159,9 +157,7 @@ const handleLogout = async () => {
             {/* DRAWER */}
             {menuOpen && (
               <div className="fixed inset-0 bg-black/40 z-50">
-
                 <div className="absolute right-0 top-0 h-full w-64 bg-white shadow-lg p-5 flex flex-col gap-6">
-
                   {/* CLOSE */}
                   <div className="flex justify-end">
                     <button onClick={() => setMenuOpen(false)}>
@@ -170,10 +166,18 @@ const handleLogout = async () => {
                   </div>
 
                   {/* LINKS */}
-                  <Link href="/" onClick={() => setMenuOpen(false)}>Home</Link>
-                  <Link href="/shop" onClick={() => setMenuOpen(false)}>Shop</Link>
-                  <Link href="/about" onClick={() => setMenuOpen(false)}>About</Link>
-                  <Link href="/contact" onClick={() => setMenuOpen(false)}>Contact</Link>
+                  <Link href="/" onClick={() => setMenuOpen(false)}>
+                    Home
+                  </Link>
+                  <Link href="/shop" onClick={() => setMenuOpen(false)}>
+                    Shop
+                  </Link>
+                  <Link href="/about" onClick={() => setMenuOpen(false)}>
+                    About
+                  </Link>
+                  <Link href="/contact" onClick={() => setMenuOpen(false)}>
+                    Contact
+                  </Link>
 
                   {/* 🔥 MOBILE CART FIX */}
                   <div
@@ -230,13 +234,10 @@ const handleLogout = async () => {
                       </button>
                     </>
                   )}
-
                 </div>
               </div>
             )}
-
           </div>
-
         </div>
       </div>
 

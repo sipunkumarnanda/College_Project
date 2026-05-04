@@ -1,93 +1,202 @@
+
 'use client'
-import Image from "next/image";
-import { DotIcon } from "lucide-react";
-import { useSelector } from "react-redux";
-import Rating from "./Rating";
+
 import { useState } from "react";
-import RatingModal from "./RatingModal";
+import api from "@/lib/api";
+import toast from "react-hot-toast";
 
-const OrderItem = ({ order }) => {
+export default function OrderItem({ order, onClick }) {
 
-    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹';
-    const [ratingModal, setRatingModal] = useState(null);
+  const isDelivered = order.status === "DELIVERED";
 
-    const { ratings } = useSelector(state => state.rating);
+  const [showReview, setShowReview] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [review, setReview] = useState("");
 
-    return (
-        <>
-            <tr className="text-sm">
-                <td className="text-left">
-                    <div className="flex flex-col gap-6">
-                        {order.orderItems.map((item, index) => (
-                            <div key={index} className="flex items-center gap-4">
-                                <div className="w-20 aspect-square bg-slate-100 flex items-center justify-center rounded-md">
-                                    <Image
-                                        className="h-14 w-auto"
-                                        src={item.product.images[0]}
-                                        alt="product_img"
-                                        width={50}
-                                        height={50}
-                                    />
-                                </div>
-                                <div className="flex flex-col justify-center text-sm">
-                                    <p className="font-medium text-slate-600 text-base">{item.product.name}</p>
-                                    <p>{currency}{item.price} Qty : {item.quantity} </p>
-                                    <p className="mb-1">{new Date(order.createdAt).toDateString()}</p>
-                                    <div>
-                                        {ratings.find(rating => order.id === rating.orderId && item.product.id === rating.productId)
-                                            ? <Rating value={ratings.find(rating => order.id === rating.orderId && item.product.id === rating.productId).rating} />
-                                            : <button onClick={() => setRatingModal({ orderId: order.id, productId: item.product.id })} className={`text-green-500 hover:bg-green-50 transition ${order.status !== "DELIVERED" && 'hidden'}`}>Rate Product</button>
-                                        }</div>
-                                    {ratingModal && <RatingModal ratingModal={ratingModal} setRatingModal={setRatingModal} />}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </td>
+  // ✅ PRODUCT ID
+  const productId =
+    order.items[0]?.product?._id || order.items[0]?.product;
 
-                <td className="text-center max-md:hidden">{currency}{order.total}</td>
+  // ✅ LOCAL REVIEW STATE (IMPORTANT)
+  const [localReview, setLocalReview] = useState(() => {
+    return order.reviews?.find(
+      (r) => r.product?.toString() === productId?.toString()
+    ) || null;
+  });
 
-                <td className="text-left max-md:hidden">
-                    <p>{order.address.name}, {order.address.street},</p>
-                    <p>{order.address.city}, {order.address.state}, {order.address.zip}, {order.address.country},</p>
-                    <p>{order.address.phone}</p>
-                </td>
+  // ✅ SUBMIT / UPDATE REVIEW
+  const handleSubmit = async () => {
+    try {
+      const item = order.items[0];
 
-                <td className="text-left space-y-2 text-sm max-md:hidden">
-                    <div
-                        className={`flex items-center justify-center gap-1 rounded-full p-1 ${order.status === 'confirmed'
-                            ? 'text-yellow-500 bg-yellow-100'
-                            : order.status === 'delivered'
-                                ? 'text-green-500 bg-green-100'
-                                : 'text-slate-500 bg-slate-100'
-                            }`}
-                    >
-                        <DotIcon size={10} className="scale-250" />
-                        {order.status.split('_').join(' ').toLowerCase()}
-                    </div>
-                </td>
-            </tr>
-            {/* Mobile */}
-            <tr className="md:hidden">
-                <td colSpan={5}>
-                    <p>{order.address.name}, {order.address.street}</p>
-                    <p>{order.address.city}, {order.address.state}, {order.address.zip}, {order.address.country}</p>
-                    <p>{order.address.phone}</p>
-                    <br />
-                    <div className="flex items-center">
-                        <span className='text-center mx-auto px-6 py-1.5 rounded bg-green-100 text-green-700' >
-                            {order.status.replace(/_/g, ' ').toLowerCase()}
-                        </span>
-                    </div>
-                </td>
-            </tr>
-            <tr>
-                <td colSpan={4}>
-                    <div className="border-b border-slate-300 w-6/7 mx-auto" />
-                </td>
-            </tr>
-        </>
-    )
+      const payload = {
+        productId: item.product?._id || item.product,
+        orderId: order._id,
+        rating,
+        review
+      };
+
+      let res;
+
+      if (localReview) {
+        // ✏️ UPDATE
+        res = await api.put("/reviews", payload);
+        toast.success("Review updated");
+      } else {
+        // ➕ CREATE
+        res = await api.post("/reviews", payload);
+        toast.success("Review added");
+      }
+
+      // ✅ UPDATE UI WITHOUT RELOAD
+      setLocalReview(res.data.data);
+
+      setShowReview(false);
+
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Error");
+    }
+  };
+
+  return (
+    <>
+      <div
+        onClick={onClick}
+        className="border rounded-xl p-5 flex justify-between items-center bg-gray-50 hover:bg-gray-100 cursor-pointer"
+      >
+
+        {/* LEFT */}
+        <div>
+          <p className="font-semibold">
+            {order.items?.[0]?.productName}
+          </p>
+          <p className="text-sm text-gray-500">
+            {order.items.length} items
+          </p>
+        </div>
+
+        {/* TOTAL */}
+        <div>₹{order.totalPrice?.amount}</div>
+
+        {/* ADDRESS */}
+        <div>{order.shippingAddress?.city}</div>
+
+        {/* STATUS + REVIEW */}
+        <div className="flex flex-col items-end gap-1">
+
+          {/* STATUS */}
+          <span className="bg-green-100 text-green-600 px-3 py-1 rounded-full text-sm">
+            {order.status}
+          </span>
+
+          {/* ⭐ REVIEW SECTION */}
+          {isDelivered && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="text-sm"
+            >
+
+              {/* ⭐ SHOW STARS */}
+              <div className="flex text-lg">
+                {[1,2,3,4,5].map((star)=>(
+                  <span
+                    key={star}
+                    className={
+                      (localReview?.rating || 0) >= star
+                        ? "text-green-500"
+                        : "text-gray-300"
+                    }
+                  >
+                    ★
+                  </span>
+                ))}
+              </div>
+
+              {/* BUTTON */}
+              {localReview ? (
+                <span
+                  onClick={(e)=>{
+                    e.stopPropagation();
+                    setRating(localReview.rating);
+                    setReview(localReview.review);
+                    setShowReview(true);
+                  }}
+                  className="text-green-600 text-xs cursor-pointer mt-1"
+                >
+                  Reviewed (Edit)
+                </span>
+              ) : (
+                <button
+                  onClick={(e)=>{
+                    e.stopPropagation();
+                    setRating(0);
+                    setReview("");
+                    setShowReview(true);
+                  }}
+                  className="text-blue-600 text-xs mt-1"
+                >
+                  Write Review
+                </button>
+              )}
+
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* ⭐ MODAL */}
+      {showReview && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+
+          <div className="bg-white p-6 rounded-lg w-96">
+
+            <h3 className="font-semibold mb-3">
+              {localReview ? "Edit Review" : "Write Review"}
+            </h3>
+
+            {/* ⭐ CLICKABLE STARS */}
+            <div className="flex text-2xl mb-3">
+              {[1,2,3,4,5].map((star)=>(
+                <span
+                  key={star}
+                  onClick={()=>setRating(star)}
+                  className={`cursor-pointer ${
+                    rating >= star
+                      ? "text-green-500"
+                      : "text-gray-300"
+                  }`}
+                >
+                  ★
+                </span>
+              ))}
+            </div>
+
+            {/* TEXT */}
+            <textarea
+              value={review}
+              onChange={(e)=>setReview(e.target.value)}
+              className="w-full border p-2 rounded"
+            />
+
+            {/* ACTIONS */}
+            <div className="flex justify-end gap-2 mt-3">
+              <button onClick={()=>setShowReview(false)}>
+                Cancel
+              </button>
+
+              <button
+                onClick={handleSubmit}
+                className="bg-green-600 text-white px-4 py-2 rounded"
+              >
+                {localReview ? "Update" : "Submit"}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+    </>
+  );
 }
-
-export default OrderItem

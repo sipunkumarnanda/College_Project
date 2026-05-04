@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 
 const ProductCard = ({ product }) => {
 const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹';
+const isOutOfStock = product.stock <= 0;
 
 const dispatch = useDispatch();
 const router = useRouter();
@@ -67,7 +68,7 @@ try {
 
 const imageUrl = product?.image || "";
 
-return ( <div className="w-full max-w-[220px] mx-auto border rounded-xl p-3 bg-white shadow-sm hover:shadow-md transition">
+return ( <div className="group w-full max-w-[240px] mx-auto bg-white border border-gray-100 rounded-2xl p-3 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
 
   {/* CLICKABLE AREA */}
   <Link href={`/product/${product._id}`} className="block">
@@ -111,20 +112,24 @@ return ( <div className="w-full max-w-[220px] mx-auto border rounded-xl p-3 bg-w
 
   {/* BUTTON */}
   <button
-    onClick={handleCartClick}
-    disabled={addingId === product._id}
-    className={`mt-3 w-full py-2 rounded text-white transition ${
-      isInCart
-        ? "bg-blue-500 hover:bg-blue-600"
-        : "bg-green-600 hover:bg-green-700"
-    }`}
-  >
-    {isInCart
-      ? "Go to Cart"
-      : addingId === product._id
-      ? "Adding..."
-      : "Add to Cart"}
-  </button>
+  onClick={handleCartClick}
+  disabled={isOutOfStock || addingId === product._id}
+  className={`mt-3 w-full py-2 rounded text-white transition ${
+    isOutOfStock
+      ? "bg-gray-400 cursor-not-allowed"
+      : isInCart
+      ? "bg-blue-500 hover:bg-blue-600"
+      : "bg-green-600 hover:bg-green-700"
+  }`}
+>
+  {isOutOfStock
+    ? "Out of Stock"
+    : isInCart
+    ? "Go to Cart"
+    : addingId === product._id
+    ? "Adding..."
+    : "Add to Cart"}
+</button>
 
 </div>
 

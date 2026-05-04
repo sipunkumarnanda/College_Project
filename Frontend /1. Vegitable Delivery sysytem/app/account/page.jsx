@@ -7,9 +7,9 @@ import api from "@/lib/api";
 import toast from "react-hot-toast";
 import { setAddresses } from "@/lib/features/address/addressSlice";
 import AddressModal from "@/components/AddressModal";
+import OrderDetailsModal from "@/components/OrderDetailsModal";
 
 const AccountPage = () => {
-
   const { user } = useSelector((state) => state.auth);
   const addressList = useSelector((state) => state.address.list);
   const dispatch = useDispatch();
@@ -17,9 +17,14 @@ const AccountPage = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Address modal
   const [showModal, setShowModal] = useState(false);
   const [editData, setEditData] = useState(null);
   const [editIndex, setEditIndex] = useState(null);
+
+  // ✅ Order modal state (FIX ADDED)
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
 
   // ✅ Load data
   useEffect(() => {
@@ -27,12 +32,11 @@ const AccountPage = () => {
       try {
         const [ordersRes, meRes] = await Promise.all([
           api.get("/orders/my"),
-          api.get("/auth/me")
+          api.get("/auth/me"),
         ]);
 
         setOrders(ordersRes.data?.data || []);
         dispatch(setAddresses(meRes.data.data.addresses || []));
-
       } catch (err) {
         console.log(err);
       }
@@ -41,7 +45,7 @@ const AccountPage = () => {
     loadData();
   }, [dispatch]);
 
-  // ✅ Delete
+  // ✅ Delete address
   const handleDelete = async (index) => {
     try {
       setLoading(true);
@@ -50,7 +54,6 @@ const AccountPage = () => {
       dispatch(setAddresses(res.data.data));
 
       toast.success("Address deleted");
-
     } catch {
       toast.error("Delete failed");
     } finally {
@@ -58,29 +61,34 @@ const AccountPage = () => {
     }
   };
 
-  // ✅ Set Default
+  // ✅ Set default address
   const handleSetDefault = async (index) => {
     try {
       const res = await api.put(`/address/default/${index}`);
       dispatch(setAddresses(res.data.data));
 
       toast.success("Default updated");
-
     } catch {
       toast.error("Failed");
     }
   };
 
-  // ✅ Edit
+  // ✅ Edit address
   const handleEdit = (addr, index) => {
     setEditData(addr);
     setEditIndex(index);
     setShowModal(true);
   };
 
+  // ✅ Handle order click (FIX ADDED)
+  const handleOrderClick = (order) => {
+    setSelectedOrder(order);
+    setShowOrderModal(true);
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-6 py-10 space-y-10">
-
+      
       {/* PROFILE */}
       <div className="bg-white shadow p-6 rounded-lg">
         <h2 className="text-xl font-semibold mb-4">My Profile</h2>
@@ -110,7 +118,6 @@ const AccountPage = () => {
           <div className="space-y-4">
             {addressList.map((addr, index) => (
               <div key={index} className="border p-4 rounded">
-
                 <p className="font-medium">
                   {addr.fullName} ({addr.phone})
                 </p>
@@ -126,7 +133,6 @@ const AccountPage = () => {
                 )}
 
                 <div className="flex gap-3 mt-2">
-
                   <button
                     onClick={() => handleEdit(addr, index)}
                     className="text-yellow-600 text-sm"
@@ -149,7 +155,6 @@ const AccountPage = () => {
                   >
                     Delete
                   </button>
-
                 </div>
               </div>
             ))}
@@ -166,10 +171,15 @@ const AccountPage = () => {
         ) : (
           <div className="space-y-4">
             {orders.map((order) => (
-              <div key={order._id} className="border p-4 rounded flex justify-between">
-
+              <div
+                key={order._id}
+                onClick={() => handleOrderClick(order)} // ✅ CLICK ENABLED
+                className="border p-4 rounded flex justify-between cursor-pointer hover:bg-gray-50"
+              >
                 <div>
-                  <p className="font-medium">Order ID: {order._id.slice(-6)}</p>
+                  <p className="font-medium">
+                    Order ID: {order._id.slice(-6)}
+                  </p>
                   <p className="text-sm text-gray-500">
                     {new Date(order.createdAt).toLocaleDateString()}
                   </p>
@@ -181,14 +191,13 @@ const AccountPage = () => {
                   </p>
                   <p className="text-sm">{order.status}</p>
                 </div>
-
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* MODAL */}
+      {/* ADDRESS MODAL */}
       {showModal && (
         <AddressModal
           setShowAddressModal={setShowModal}
@@ -197,6 +206,13 @@ const AccountPage = () => {
         />
       )}
 
+      {/* ✅ ORDER MODAL (FIX ADDED) */}
+      {showOrderModal && selectedOrder && (
+        <OrderDetailsModal
+          order={selectedOrder}
+          onClose={() => setShowOrderModal(false)}
+        />
+      )}
     </div>
   );
 };

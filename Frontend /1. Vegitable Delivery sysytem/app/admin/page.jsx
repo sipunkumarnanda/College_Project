@@ -1,62 +1,40 @@
-'use client'
-import { dummyAdminDashboardData } from "@/assets/assets"
-import Loading from "@/components/Loading"
-import OrdersAreaChart from "@/components/OrdersAreaChart"
-import { CircleDollarSignIcon, ShoppingBasketIcon, StoreIcon, TagsIcon } from "lucide-react"
-import { useEffect, useState } from "react"
 
-export default function AdminDashboard() {
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import AdminDashboard from "@/components/admin/AdminDashboard";
 
-    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || ' ₹'
+function decodeJWT(token) {
+  try {
+    const base64 = token.split(".")[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
 
-    const [loading, setLoading] = useState(true)
-    const [dashboardData, setDashboardData] = useState({
-        products: 0,
-        revenue: 0,
-        orders: 0,
-        stores: 0,
-        allOrders: [],
-    })
+    return JSON.parse(atob(base64));
+  } catch {
+    return null;
+  }
+}
 
-    const dashboardCardsData = [
-        { title: 'Total Products', value: dashboardData.products, icon: ShoppingBasketIcon },
-        { title: 'Total Revenue', value: currency + dashboardData.revenue, icon: CircleDollarSignIcon },
-        { title: 'Total Orders', value: dashboardData.orders, icon: TagsIcon },
-        { title: 'Total Stores', value: dashboardData.stores, icon: StoreIcon },
-    ]
+export default function AdminPage() {
+  const token = cookies().get("token")?.value;
 
-    const fetchDashboardData = async () => {
-        setDashboardData(dummyAdminDashboardData)
-        setLoading(false)
-    }
+  // ❌ Not logged in
+  if (!token) {
+    redirect("/login?error=unauthorized");
+  }
 
-    useEffect(() => {
-        fetchDashboardData()
-    }, [])
+  const payload = decodeJWT(token);
 
-    if (loading) return <Loading />
+  // ❌ Invalid token
+  if (!payload) {
+    redirect("/login?error=session-expired");
+  }
 
-    return (
-        <div className="text-slate-500">
-            <h1 className="text-2xl">Admin <span className="text-slate-800 font-medium">Dashboard</span></h1>
+  // ❌ Not admin
+  if (payload.role !== "admin") {
+    redirect("/?error=not-admin");
+  }
 
-            {/* Cards */}
-            <div className="flex flex-wrap gap-5 my-10 mt-4">
-                {
-                    dashboardCardsData.map((card, index) => (
-                        <div key={index} className="flex items-center gap-10 border border-slate-200 p-3 px-6 rounded-lg">
-                            <div className="flex flex-col gap-3 text-xs">
-                                <p>{card.title}</p>
-                                <b className="text-2xl font-medium text-slate-700">{card.value}</b>
-                            </div>
-                            <card.icon size={50} className=" w-11 h-11 p-2.5 text-slate-400 bg-slate-100 rounded-full" />
-                        </div>
-                    ))
-                }
-            </div>
-
-            {/* Area Chart */}
-            <OrdersAreaChart allOrders={dashboardData.allOrders} />
-        </div>
-    )
+  // ✅ Only admin allowed
+  return <AdminDashboard />;
 }
