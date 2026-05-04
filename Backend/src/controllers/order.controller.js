@@ -1,15 +1,17 @@
+
 import Order from "../models/order.model.js";
 import Cart from "../models/cart.model.js";
 import Product from "../models/product.model.js";
 import mongoose from "mongoose";
-
-// @desc    Place order from cart
-// @route   POST /api/orders
-// @access  Private
+import Review from "../models/review.model.js";
+// =======================
+// PLACE ORDER
+// =======================
 export const placeOrder = async (req, res) => {
   try {
-    // 📦 Validate shipping address
     const { shippingAddress } = req.body;
+
+    // 📦 Validate address
     if (
       !shippingAddress ||
       !shippingAddress.fullName ||
@@ -26,13 +28,13 @@ export const placeOrder = async (req, res) => {
       });
     }
 
-    // 🛒 Get user cart
+    // 🛒 Get cart
     const cart = await Cart.findOne({ user: req.user._id }).populate(
       "items.product",
       "name price stock vendor"
     );
 
-    if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
+    if (!cart || cart.items.length === 0) {
       return res.status(400).json({
         success: false,
         message: "Your cart is empty",
@@ -42,40 +44,32 @@ export const placeOrder = async (req, res) => {
     let totalAmount = 0;
     const orderItems = [];
 
-    // 🔁 Validate & prepare items
+    // 🔁 Prepare items
     for (const item of cart.items) {
       const product = item.product;
 
       if (!product) {
         return res.status(400).json({
           success: false,
-          message: "One or more products in your cart no longer exist.",
+          message: "Product not found",
         });
       }
 
       if (!product.vendor) {
         return res.status(400).json({
           success: false,
-          message: `Vendor missing for product ${product.name}`,
-        });
-      }
-
-      if (item.quantity < 1) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid quantity for a product in your cart.",
+          message: `Vendor missing for ${product.name}`,
         });
       }
 
       if (product.stock < item.quantity) {
         return res.status(400).json({
           success: false,
-          message: `Insufficient stock for ${product.name}. Available: ${product.stock}`,
+          message: `Insufficient stock for ${product.name}`,
         });
       }
 
-      const price = product.price;
-      totalAmount += price * item.quantity;
+      totalAmount += product.price * item.quantity;
 
       orderItems.push({
         product: product._id,
@@ -83,13 +77,13 @@ export const placeOrder = async (req, res) => {
         productName: product.name,
         quantity: item.quantity,
         price: {
-          amount: price,
+          amount: product.price,
           currency: "INR",
         },
       });
     }
 
-    // 🔒 SAFE stock update
+    // 🔒 Safe stock update
     for (const item of orderItems) {
       const updated = await Product.findOneAndUpdate(
         {
@@ -104,7 +98,7 @@ export const placeOrder = async (req, res) => {
       if (!updated) {
         return res.status(400).json({
           success: false,
-          message: "Stock changed, please try again",
+          message: "Stock changed, try again",
         });
       }
     }
@@ -118,65 +112,69 @@ export const placeOrder = async (req, res) => {
         currency: "INR",
       },
       shippingAddress,
+      paymentStatus: "PENDING", // ✅ IMPORTANT
     });
 
     // 🧹 Clear cart
     cart.items = [];
     await cart.save();
 
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
-      message: "Order placed successfully",
+      message: "Order created",
       data: order,
     });
 
   } catch (error) {
-    console.error("Error placing order:", error);
+    console.error("Order error:", error);
 
-    // ✅ Mongoose validation error
     if (error.name === "ValidationError") {
-      const messages = Object.values(error.errors).map((err) => err.message);
-
       return res.status(400).json({
         success: false,
-        message: messages.join(", "),
+        message: Object.values(error.errors)
+          .map((e) => e.message)
+          .join(", "),
       });
     }
 
-    // ✅ Duplicate key
-    if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        message: "Duplicate data error",
-      });
-    }
-
-    // ❌ fallback
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
-      message: error.message || "Server Error",
+      message: "Server Error",
     });
   }
 };
 
-// @desc    Get logged-in user's orders
-// @route   GET /api/orders/my
-// @access  Private
+
+
+// =======================
+// GET MY ORDERS
+// =======================
 export const getMyOrders = async (req, res) => {
   try {
-    if (
-      !req.user ||
-      !req.user.id ||
-      !mongoose.Types.ObjectId.isValid(req.user.id)
-    ) {
-      return res.status(401).json({ message: "Invalid user" });
-    }
     const orders = await Order.find({ user: req.user.id })
       .populate("items.product", "name image")
       .sort("-createdAt");
-    return res.status(200).json({ success: true, data: orders });
+
+    // ⭐ attach reviews
+    const reviews = await Review.find({ user: req.user.id });
+
+    const ordersWithReviews = orders.map(order => {
+      const orderReviews = reviews.filter(
+        r => r.order.toString() === order._id.toString()
+      );
+
+      return {
+        ...order.toObject(),
+        reviews: orderReviews
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: ordersWithReviews
+    });
+
   } catch (error) {
-    console.error("Error fetching orders:", error);
-    return res.status(500).json({ message: "Server Error" });
+    res.status(500).json({ message: "Server Error" });
   }
 };

@@ -11,6 +11,8 @@ import vendorRoutes from './routes/vendor.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import addressRoutes from './routes/address.routes.js';
 import reviewRoutes from "./routes/review.routes.js";
+import supportRoutes from "./routes/support.routes.js";
+import payoutRoutes from "./routes/payout.routes.js";
 
 const ipv6 = process.env.IPV6;
 
@@ -46,6 +48,10 @@ app.use('/api/vendor', vendorRoutes);
 app.use('/api/admin', adminRoutes);
 app.use("/api/address", addressRoutes);
 app.use("/api/reviews", reviewRoutes);
+
+app.use("/api/support", supportRoutes);
+
+app.use("/api/payout", payoutRoutes);
 
 app.get("/", (req, res) => {
   res.send("Server is running 🚀");

@@ -8,28 +8,42 @@ const reviewSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+
     product: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: true,
     },
+
+    // ⭐ IMPORTANT: one review per order
+    order: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
+      required: true,
+    },
+
     rating: {
       type: Number,
       required: true,
       min: 1,
       max: 5,
     },
+
     review: {
       type: String,
+      default: "",
     },
   },
   { timestamps: true }
 );
 
-// 🔒 Prevent duplicate reviews
-reviewSchema.index({ user: 1, product: 1 }, { unique: true });
+// ✅ UNIQUE: user + product + order
+reviewSchema.index(
+  { user: 1, product: 1, order: 1 },
+  { unique: true }
+);
 
-// ⚡ Auto-update product stats
+// ⭐ AUTO UPDATE PRODUCT RATING
 reviewSchema.post("save", async function () {
   const Review = mongoose.model("Review");
   const Product = mongoose.model("Product");

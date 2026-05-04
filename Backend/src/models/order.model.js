@@ -74,28 +74,25 @@ const orderSchema = new mongoose.Schema(
 
     items: [orderItemSchema],
 
+    // ⭐ ADD THIS BACK
     status: {
       type: String,
-      enum: ["PENDING", "CONFIRMED", "CANCELLED", "SHIPPED", "DELIVERED"],
+      enum: ["PENDING", "CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED"],
+      default: "PENDING",
+    },
+
+    paymentStatus: {
+      type: String,
+      enum: ["PENDING", "PAID", "FAILED"],
       default: "PENDING",
     },
 
     totalPrice: {
-      amount: {
-        type: Number,
-        required: true,
-      },
-      currency: {
-        type: String,
-        required: true,
-        enum: ["USD", "INR"],
-      },
+      amount: Number,
+      currency: String,
     },
 
-    shippingAddress: {
-      type: addressSchema,
-      required: true,
-    },
+    shippingAddress: addressSchema,
   },
   { timestamps: true }
 );

@@ -7,49 +7,78 @@ import uploadFile from "../services/storage.service.js";
 // @access  Public
 export const getProducts = async (req, res) => {
   try {
-    const { category, page, limit } = req.query;
+    const { category, page, limit, search } = req.query;
 
     const query = {};
+
+    // ✅ CATEGORY FILTER
     if (category) {
       query.category = category;
     }
 
-    let products;
-    let total = await Product.countDocuments(query);
+    // ✅ SEARCH FILTER (case-insensitive)
+    if (search) {
+      query.name = { $regex: search.trim(), $options: "i" };
+    }
 
-    // ✅ If pagination params exist → use pagination
+    // 🔥 Populate only active vendors
+    const populateVendor = {
+      path: "vendor",
+      match: { isActive: true },
+      select: "name isActive",
+    };
+
+    let products = [];
+    let total = 0;
+
+    // =========================
+    // ✅ WITH PAGINATION
+    // =========================
     if (page && limit) {
       const pageNumber = parseInt(page, 10);
       const limitNumber = parseInt(limit, 10);
       const skip = (pageNumber - 1) * limitNumber;
 
-      products = await Product.find(query)
+      const rawProducts = await Product.find(query)
+        .populate(populateVendor)
         .skip(skip)
         .limit(limitNumber);
 
+      // ❗ remove inactive vendor products
+      const filteredProducts = rawProducts.filter(p => p.vendor !== null);
+
+      // ⚠️ FIX: total should be from DB, not filtered page length
+      const totalProducts = await Product.countDocuments(query);
+
       return res.status(200).json({
         success: true,
-        count: products.length,
+        count: filteredProducts.length,
         page: pageNumber,
-        totalPages: Math.ceil(total / limitNumber),
-        totalProducts: total,
-        data: products,
+        totalPages: Math.ceil(totalProducts / limitNumber),
+        totalProducts,
+        data: filteredProducts,
       });
     }
 
-    // ✅ No pagination → return all products
-    products = await Product.find(query);
+    // =========================
+    // ✅ WITHOUT PAGINATION
+    // =========================
+    const rawProducts = await Product.find(query).populate(populateVendor);
 
-    res.status(200).json({
+    const filteredProducts = rawProducts.filter(p => p.vendor !== null);
+
+    total = filteredProducts.length;
+
+    return res.status(200).json({
       success: true,
-      count: products.length,
+      count: total,
       totalProducts: total,
-      data: products,
+      data: filteredProducts,
     });
 
   } catch (error) {
-    console.error('Error fetching products:', error);
-    res.status(500).json({ message: 'Server Error' });
+    console.error("Error fetching products:", error);
+    res.status(500).json({ message: "Server Error" });
   }
 };
 

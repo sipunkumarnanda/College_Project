@@ -2,11 +2,16 @@
 export const vendorApproved = (req, res, next) => {
   // Must be vendor
   if (req.user.role !== "vendor") {
-    return res.status(403).json({ message: "Only vendor allowed" });
+    return res.status(403).json({
+      message: "Only vendor allowed",
+    });
   }
 
-  // Must be approved
-  if (!req.user.isApproved) {
+  // ✅ SUPPORT BOTH (old + new)
+  const isApproved =
+    req.user.store?.status === "approved" || req.user.isApproved;
+
+  if (!isApproved) {
     return res.status(403).json({
       message: "Vendor not approved yet",
     });

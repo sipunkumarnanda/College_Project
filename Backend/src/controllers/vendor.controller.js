@@ -6,93 +6,70 @@ import PDFDocument from "pdfkit";
 import User from "../models/user.model.js";
 import uploadFile from "../services/storage.service.js";
 
-// Middleware to check vendor role
-const checkVendor = (req, res, next) => {
-  if (!req.user || req.user.role !== 'vendor') {
-    return res.status(403).json({ success: false, message: 'Access denied. Vendors only.' });
-  }
-  next();
-};
-
 
 // register
 export const registerVendor = async (req, res) => {
-try {
-const user = await User.findById(req.user.id);
+  try {
+    const user = await User.findById(req.user.id);
 
-if (!user) {
-  return res.status(404).json({ message: "User not found" });
-}
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-// ❌ already registered
-if (user.store?.name) {
-  return res.status(400).json({
-    message: "You already registered a store"
-  });
-}
+    if (user.store?.name) {
+      return res.status(400).json({
+        message: "You already registered a store",
+      });
+    }
 
-const {
-  name,
-  username,
-  description,
-  contact,
-  address,
-  pincode,
-  lat,
-  lng,
-  image // optional URL
-} = req.body;
+    const {
+      name,
+      description,
+      contact,
+      address,
+      pincode,
+      area,
+      image,
+    } = req.body;
 
-if (!name || !username || !contact || !address) {
-  return res.status(400).json({
-    message: "Please fill required fields"
-  });
-}
+    if (!name || !contact || !address || !area) {
+      return res.status(400).json({
+        message: "Please fill required fields",
+      });
+    }
 
-let imageUrl = "";
+    let imageUrl = "";
 
-// ✅ CASE 1: file upload (ImageKit)
-if (req.file) {
-  const uploaded = await uploadFile(req.file);
-  imageUrl = uploaded.url;
-}
+    if (req.file) {
+      const uploaded = await uploadFile(req.file);
+      imageUrl = uploaded.url;
+    } else if (image) {
+      imageUrl = image;
+    }
 
-// ✅ CASE 2: direct image URL
-else if (image) {
-  imageUrl = image;
-}
+    user.store = {
+      name,
+      description,
+      contact,
+      address,
+      pincode,
+      area,
+      image: imageUrl,
+      status: "pending", // ✅ ONLY STATUS
+    };
 
-// ✅ SAVE STORE
-user.store = {
-  name,
-  username,
-  description,
-  contact,
-  address,
-  pincode,
-  location: { lat, lng },
-  image: imageUrl,
-  status: "pending"
-};
+    user.role = "vendor";
 
-user.role = "vendor";
-user.isApproved = false;
+    await user.save();
 
-await user.save();
-
-res.status(200).json({
-  success: true,
-  status: "pending",
-  message: "Store submitted for approval",
-  data: user.store
-});
-
-} catch (error) {
-console.error("Vendor register error:", error);
-res.status(500).json({
-message: "Vendor registration failed"
-});
-}
+    res.json({
+      success: true,
+      message: "Store submitted for approval",
+      data: user.store,
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Error" });
+  }
 };
 
 
@@ -109,63 +86,77 @@ export const getVendorProducts = async (req, res) => {
 // GET /api/vendor/orders
 
 export const getVendorOrders = async (req, res) => {
-try {
-if (req.user.role !== "vendor") {
-return res.status(403).json({ message: "Access denied" });
-}
+  try {
+    if (req.user.role !== "vendor") {
+      return res.status(403).json({ message: "Access denied" });
+    }
 
-const orders = await Order.find()
-  .populate("user", "name email")
-  .populate("items.product", "name price vendor")
-  .sort("-createdAt");
+    // ✅ ONLY FETCH RELEVANT ORDERS
+    const orders = await Order.find({
+  "items.vendor": req.user._id
+})
+.populate({
+  path: "user",
+  select: "name email phone",
+})
+.populate({
+  path: "items.product",
+  select: "name price vendor"
+})
+.sort("-createdAt");
 
-const vendorOrders = orders
-  .map((order) => {
+    const vendorOrders = orders.map((order) => {
 
-    const vendorItems = order.items.filter(
-      (item) =>
-        item.vendor &&
-        item.vendor.toString() === req.user._id.toString()
-    );
+      const vendorItems = order.items.filter(
+        (item) =>
+          item.vendor &&
+          item.vendor.toString() === req.user._id.toString()
+      );
 
-    if (vendorItems.length === 0) return null;
+      // 🔥 CALCULATE TOTAL
+      const vendorTotal = vendorItems.reduce((sum, item) => {
 
-    // 🔥 FIXED CALCULATION (supports old + new)
-    const vendorTotal = vendorItems.reduce((sum, item) => {
+        const price =
+          item.price?.amount ||
+          item.product?.price ||
+          0;
 
-      const price =
-        item.price?.amount ||   // ✅ NEW SCHEMA
-        item.product?.price || // ✅ FALLBACK
-        0;
+        return sum + price * item.quantity;
 
-      return sum + price * item.quantity;
+      }, 0);
 
-    }, 0);
+      return {
+        _id: order._id,
 
-    return {
-      _id: order._id,
-      user: order.user,
-      items: vendorItems,
-      totalPrice: {
-        amount: vendorTotal,
-        currency: "INR",
-      },
-      status: order.status,
-      shippingAddress: order.shippingAddress,
-      createdAt: order.createdAt,
-    };
-  })
-  .filter(Boolean);
+        // ✅ FULL USER
+        user: order.user,
 
-res.status(200).json({
-  success: true,
-  data: vendorOrders,
-});
+        items: vendorItems,
 
-} catch (error) {
-console.error("Error fetching vendor orders:", error);
-res.status(500).json({ message: "Server Error" });
-}
+        // ✅ TOTAL
+        totalPrice: {
+          amount: vendorTotal,
+          currency: "INR",
+        },
+
+        // ✅ IMPORTANT FIELDS (ADD THESE)
+        status: order.status,
+        paymentStatus: order.paymentStatus || "COD", // ⭐ FIX
+        shippingAddress: order.shippingAddress,
+        createdAt: order.createdAt,
+
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: vendorOrders,
+    });
+
+  } catch (error) {
+    console.error("Error fetching vendor orders:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
 };
 
 
@@ -231,59 +222,68 @@ export const updateOrderStatus = async (req, res) => {
 
 export const getVendorStats = async (req, res) => {
   try {
+    // ❌ must be vendor
     if (req.user.role !== "vendor") {
       return res.status(403).json({ message: "Access denied" });
     }
 
+    // ❌ must be ACTIVE
+    if (!req.user.isActive) {
+      return res.status(403).json({
+        message: "Store is disabled by admin",
+      });
+    }
+
+    // ❌ must be APPROVED
+    if (!req.user.store || req.user.store.status !== "approved") {
+      return res.status(403).json({
+        message: "Store not approved yet",
+      });
+    }
+
     const vendorId = req.user._id;
 
-    // 🟢 1. Get total products
-    const totalProducts = await Product.countDocuments({ vendor: vendorId });
+    // =========================
+    // 🟢 PRODUCTS
+    // =========================
+    const totalProducts = await Product.countDocuments({
+      vendor: vendorId,
+    });
 
-    // 🟢 2. Get orders
-    const orders = await Order.find()
-      .populate("items.product", "vendor")
-      .sort("-createdAt");
+    // =========================
+    // 🟢 ORDERS + REVENUE
+    // =========================
+    const orders = await Order.find({
+      "items.vendor": vendorId,
+    });
 
-    let totalOrders = 0;
+    let totalOrders = orders.length;
     let totalRevenue = 0;
 
     orders.forEach((order) => {
-      let hasVendorItem = false;
-
       order.items.forEach((item) => {
-        if (
-          item.product &&
-          item.product.vendor.toString() === vendorId.toString()
-        ) {
-          hasVendorItem = true;
-
+        if (item.vendor.toString() === vendorId.toString()) {
           totalRevenue += item.price.amount * item.quantity;
         }
       });
-
-      if (hasVendorItem) totalOrders += 1;
     });
 
-    // 🟢 3. Get ratings (reviews of vendor products)
+    // =========================
+    // 🟢 RATINGS
+    // =========================
     const ratings = await Review.find()
-      .populate("user", "name image")
       .populate({
         path: "product",
+        match: { vendor: vendorId },
         select: "name category vendor",
       })
+      .populate("user", "name image")
       .sort("-createdAt")
       .limit(5);
 
-    // 🟡 Filter only this vendor's product reviews
-    const vendorRatings = ratings.filter(
-      (r) =>
-        r.product &&
-        r.product.vendor.toString() === vendorId.toString()
-    );
+    const filteredRatings = ratings.filter((r) => r.product);
 
-    // 🟢 Format response for frontend
-    const formattedRatings = vendorRatings.map((r) => ({
+    const formattedRatings = filteredRatings.map((r) => ({
       user: {
         name: r.user?.name,
         image: r.user?.image,
@@ -298,6 +298,9 @@ export const getVendorStats = async (req, res) => {
       createdAt: r.createdAt,
     }));
 
+    // =========================
+    // ✅ RESPONSE
+    // =========================
     res.status(200).json({
       success: true,
       data: {
@@ -307,11 +310,15 @@ export const getVendorStats = async (req, res) => {
         ratings: formattedRatings,
       },
     });
+
   } catch (error) {
-    console.error("Error fetching vendor stats:", error);
-    res.status(500).json({ message: "Server Error" });
+    console.error("Vendor stats error:", error);
+    res.status(500).json({
+      message: "Server Error",
+    });
   }
 };
+
 
 //  GET /api/vendor/orders/:id/invoice
 
@@ -324,97 +331,169 @@ export const getInvoice = async (req, res) => {
     }
 
     const order = await Order.findById(orderId)
-      .populate("user", "name email")
       .populate("items.product", "name vendor");
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    // 🔹 Filter only vendor items
+    // ✅ Vendor items only
     const vendorItems = order.items.filter(
       (item) =>
-        item.product &&
-        item.product.vendor.toString() === req.user._id.toString()
+        item.vendor.toString() === req.user._id.toString()
     );
 
     if (vendorItems.length === 0) {
-      return res.status(403).json({ message: "No access to this order" });
+      return res.status(403).json({ message: "No access" });
     }
 
-    const doc = new PDFDocument({ margin: 40 });
+    // ✅ SMALL RECEIPT SIZE (BEST FOR PRINT)
+    const doc = new PDFDocument({
+      size: [250, 600], // width x height
+      margin: 10,
+    });
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", "inline; filename=invoice.pdf");
 
     doc.pipe(res);
 
-    // 🟢 HEADER
-    doc.fontSize(20).text("FreshKart Invoice", { align: "center" });
-    doc.moveDown();
-
-    // 🟢 ORDER INFO
-    doc.fontSize(12);
-    doc.text(`Order ID: ${order._id}`);
-    doc.text(`Date: ${new Date(order.createdAt).toDateString()}`);
-    doc.text(`Status: ${order.status}`);
-    doc.text(`Payment: COD`); // 🔁 change if you have real field
-    doc.moveDown();
-
-    // 🟢 CUSTOMER
-    doc.text("Customer Details:");
-    doc.text(`Name: ${order.user?.name || "N/A"}`);
-    doc.text(`Email: ${order.user?.email || "N/A"}`);
-    doc.text(`Phone: ${order.shippingAddress?.phone || "N/A"}`);
-    doc.moveDown();
-
-    // 🟢 ADDRESS
-    doc.text("Shipping Address:");
-    doc.text(`${order.shippingAddress.street}`);
-    doc.text(
-      `${order.shippingAddress.city}, ${order.shippingAddress.state}`
-    );
-    doc.text(
-      `${order.shippingAddress.zip}, ${order.shippingAddress.country}`
-    );
-    doc.moveDown();
-
-    // 🟢 TABLE HEADER
-    doc.fontSize(13).text("Items", { underline: true });
+    // =========================
+    // HEADER
+    // =========================
+    doc.fontSize(14).text("FreshKart", { align: "center" });
+    doc.fontSize(9).text("Delivery Receipt", { align: "center" });
     doc.moveDown(0.5);
 
-    doc.fontSize(11);
+    // =========================
+    // ORDER INFO
+    // =========================
+    doc.fontSize(8);
+    doc.text(`Order: ${order._id}`);
+    doc.text(`Date: ${new Date(order.createdAt).toLocaleString()}`);
+    doc.text(`Status: ${order.status}`);
+    doc.text(`Payment: ${order.paymentStatus}`);
+    doc.moveDown(0.5);
+
+    // =========================
+    // CUSTOMER
+    // =========================
+    doc.text("Customer:", { underline: true });
+
+    doc.text(order.shippingAddress?.fullName || "N/A");
+    doc.text(order.shippingAddress?.phone || "");
+
+    doc.text(
+      `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`
+    );
+    doc.text(
+      `${order.shippingAddress?.state || ""} - ${order.shippingAddress?.zip || ""}`
+    );
+
+    doc.moveDown(0.5);
+
+    // =========================
+    // ITEMS
+    // =========================
+    doc.text("Items:", { underline: true });
 
     let totalAmount = 0;
 
     vendorItems.forEach((item, index) => {
-      const total = item.price.amount * item.quantity;
+      const name = item.productName || item.product?.name || "Item";
+      const price = item.price.amount;
+      const qty = item.quantity;
+      const total = price * qty;
+
       totalAmount += total;
 
-      doc.text(
-        `${index + 1}. ${item.product.name}`
-      );
-      doc.text(`   Qty: ${item.quantity}`);
-      doc.text(`   Price: ₹${item.price.amount}`);
-      doc.text(`   Total: ₹${total}`);
-      doc.moveDown();
+      doc.text(`${index + 1}. ${name}`);
+      doc.text(`   ${qty} x ₹${price} = ₹${total}`);
+      doc.moveDown(0.3);
     });
 
-    // 🟢 TOTAL
-    doc.moveDown();
-    doc.fontSize(14).text(`Grand Total: ₹${totalAmount}`, {
-      align: "right",
-    });
+    doc.moveDown(0.5);
 
-    doc.moveDown();
-    doc.fontSize(10).text("Thank you for selling with FreshKart!", {
-      align: "center",
-    });
+    // =========================
+    // TOTAL
+    // =========================
+    doc.fontSize(10).text(
+      `TOTAL: ₹${totalAmount}`,
+      { align: "right" }
+    );
+
+    doc.moveDown(0.5);
+
+    // =========================
+    // FOOTER
+    // =========================
+    doc.fontSize(8).text(
+      "Thank you for shopping!",
+      { align: "center" }
+    );
 
     doc.end();
 
   } catch (error) {
     console.error("Invoice error:", error);
     res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+//
+
+// =======================
+// SAVE / UPDATE BANK DETAILS
+// ======================
+// SAVE BANK DETAILS
+// =======================
+export const saveBankDetails = async (req, res) => {
+  try {
+    const { accountNumber, bankName, ifsc, holderName } = req.body;
+
+    const user = await User.findById(req.user._id);
+
+    if (!user || user.role !== "vendor") {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    user.bankDetails = {
+      accountNumber,
+      bankName,
+      ifsc,
+      holderName,
+    };
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Bank details saved",
+      data: user.bankDetails,
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to save bank details" });
+  }
+};
+
+// =======================
+// GET BANK DETAILS
+// =======================
+export const getBankDetails = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({
+      success: true,
+      data: user.bankDetails || {},
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error fetching bank details" });
   }
 };
